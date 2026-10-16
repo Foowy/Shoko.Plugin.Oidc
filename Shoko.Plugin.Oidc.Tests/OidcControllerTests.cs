@@ -153,12 +153,71 @@ public class OidcControllerTests
             Url = new Mock<IUrlHelper>().Object,
         };
 
-        var result = Assert.IsType<RedirectResult>(await controller.Login(null, CancellationToken.None));
+        var result = Assert.IsType<RedirectResult>(await controller.Login(null, null, CancellationToken.None));
 
         Assert.StartsWith(provider.Origin + "/authorize?", result.Url);
         Assert.DoesNotContain(' ', result.Url);
         Assert.Contains("scope=openid%20profile%20email", result.Url);
         Assert.Contains("redirect_uri=https%3A%2F%2Fshoko.example%2Fapi%2Fplugin%2FOidc%2Fcallback", result.Url);
         Assert.Contains("shoko_oidc_state=", controller.Response.Headers.SetCookie.ToString());
+    }
+
+    [Fact]
+    public async Task Login_ForAnUnknownLinkTicketEndsOnAnErrorPage()
+    {
+        await using var provider = new MockProvider();
+        var controller = ControllerFor(provider);
+
+        var result = Assert.IsType<ContentResult>(await controller.Login(null, "forged-ticket", CancellationToken.None));
+
+        Assert.Contains("invalid_link", result.Content);
+    }
+
+    [Fact]
+    public async Task StartLink_GivesASingleUseLoginUrlForTheSignedInUser()
+    {
+        var user = SignedInUser();
+        _users.Setup(u => u.GetUserFromHttpContext(It.IsAny<HttpContext>())).Returns(user.Object);
+
+        var result = Assert.IsType<ContentResult>(_controller.StartLink());
+
+        using var json = JsonDocument.Parse(result.Content!);
+        var url = json.RootElement.GetProperty("url").GetString()!;
+        Assert.StartsWith("/api/plugin/Oidc/login?link=", url);
+        var ticket = Uri.UnescapeDataString(url["/api/plugin/Oidc/login?link=".Length..]);
+        Assert.Equal(3, _store.TakeLinkTicket(ticket)?.UserID);
+    }
+
+    [Fact]
+    public void StartLink_WithoutASignedInUserIsRejected()
+    {
+        _users.Setup(u => u.GetUserFromHttpContext(It.IsAny<HttpContext>())).Returns((IUser?)null);
+
+        Assert.IsType<UnauthorizedResult>(_controller.StartLink());
+    }
+
+    private OidcController ControllerFor(MockProvider provider)
+    {
+        var config = new OidcConfiguration
+        {
+            Authority = provider.Authority,
+            ClientId = MockProvider.ClientId,
+            ClientSecret = MockProvider.ClientSecret,
+            AllowInsecureHttp = true,
+        };
+        var configService = new Mock<IConfigurationService>();
+        configService.Setup(c => c.Load<OidcConfiguration>(It.IsAny<bool>())).Returns(config);
+        return new OidcController(
+            configService.Object,
+            new OidcProviderClient(new HttpClient(), () => config),
+            _store,
+            new OidcUserResolver(new Mock<IDbContextFactory<Data.OidcDbContext>>().Object, _users.Object),
+            _users.Object,
+            _throttle.Object,
+            NullLogger<OidcController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            Url = new Mock<IUrlHelper>().Object,
+        };
     }
 }

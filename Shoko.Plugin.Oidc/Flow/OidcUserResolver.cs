@@ -51,4 +51,54 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
 
     private static Task<OidcLink?> FindAsync(OidcDbContext db, OidcIdentity identity, CancellationToken ct)
         => db.Links.AsNoTracking().FirstOrDefaultAsync(l => l.Authority == identity.Issuer && l.Subject == identity.Subject, ct);
+
+    public async Task LinkAsync(OidcIdentity identity, int userId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var existing = await FindAsync(db, identity, ct);
+        if (existing is not null)
+        {
+            if (existing.UserID == userId)
+                return;
+            throw new OidcException("subject_taken", "That sign-in is already linked to another Shoko user.");
+        }
+
+        if (await db.Links.AnyAsync(l => l.Authority == identity.Issuer && l.UserID == userId, ct))
+            throw new OidcException("user_already_linked", "This Shoko user is already linked to another sign-in from that provider.");
+
+        db.Links.Add(new OidcLink { Authority = identity.Issuer, Subject = identity.Subject, UserID = userId });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            throw new OidcException("link_failed", "The sign-in could not be linked.", ex);
+        }
+    }
+
+    public async Task<IReadOnlyList<string>> GetAuthoritiesAsync(int userId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.Links.AsNoTracking().Where(l => l.UserID == userId).Select(l => l.Authority).ToListAsync(ct);
+    }
+
+    /// <summary>Removes the user's links and invalidates the tokens those sign-ins issued. Returns how many links were removed.</summary>
+    public async Task<int> UnlinkAsync(int userId, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var links = await db.Links.Where(l => l.UserID == userId).ToListAsync(ct);
+        if (links.Count is 0)
+            return 0;
+
+        db.Links.RemoveRange(links);
+        await db.SaveChangesAsync(ct);
+
+        if (users.GetUserByID(userId) is { } user)
+            foreach (var token in users.GetApiTokensForUser(user))
+                if (links.Any(l => token.Device.StartsWith(DeviceNames.Prefix(l.Authority), StringComparison.Ordinal)))
+                    await users.InvalidateApiToken(token);
+
+        return links.Count;
+    }
 }

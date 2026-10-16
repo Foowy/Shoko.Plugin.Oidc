@@ -135,4 +135,58 @@ public sealed class OidcUserResolverTests : IDisposable
         Assert.Equal("s", nothing.GetUsername("preferred_username"));
         Assert.Equal("nick", custom.GetUsername("nickname"));
     }
+
+    [Fact]
+    public async Task Link_TiesAnIdentityToAUser_AndIsIdempotentForTheSameUser()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+
+        using var db = NewContext();
+        var link = Assert.Single(db.Links);
+        Assert.Equal((5, "sub-1"), (link.UserID, link.Subject));
+    }
+
+    [Fact]
+    public async Task Link_RefusesAnIdentityThatBelongsToAnotherUser()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<OidcException>(() => _resolver.LinkAsync(Identity(), 6, CancellationToken.None));
+
+        Assert.Equal("subject_taken", ex.Code);
+    }
+
+    [Fact]
+    public async Task Link_RefusesAUserThatAlreadyHasAnotherIdentityFromTheSameProvider()
+    {
+        await _resolver.LinkAsync(Identity("sub-1"), 5, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<OidcException>(() => _resolver.LinkAsync(Identity("sub-2"), 5, CancellationToken.None));
+
+        Assert.Equal("user_already_linked", ex.Code);
+    }
+
+    [Fact]
+    public async Task Unlink_RemovesTheLinksAndOnlyTheTokensThatSignInIssued()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+        var user = User(5, "linked");
+        _users.Setup(u => u.GetUserByID(5)).Returns(user.Object);
+        var oidcToken = new ApiToken(user.Object, DeviceNames.Prefix("https://sso.example") + "sub-1", "t1", null);
+        var otherToken = new ApiToken(user.Object, "WebUI", "t2", null);
+        _users.Setup(u => u.GetApiTokensForUser(user.Object)).Returns([oidcToken, otherToken]);
+
+        var removed = await _resolver.UnlinkAsync(5, CancellationToken.None);
+
+        Assert.Equal(1, removed);
+        using var db = NewContext();
+        Assert.Empty(db.Links);
+        _users.Verify(u => u.InvalidateApiToken(oidcToken), Times.Once);
+        _users.Verify(u => u.InvalidateApiToken(otherToken), Times.Never);
+    }
+
+    [Fact]
+    public async Task Unlink_ForAUserWithoutLinksDoesNothing()
+        => Assert.Equal(0, await _resolver.UnlinkAsync(99, CancellationToken.None));
 }

@@ -3,7 +3,9 @@ using System.Security.Cryptography;
 
 namespace Shoko.Plugin.Oidc.Flow;
 
-public sealed record PendingLogin(string Nonce, string CodeVerifier, string ReturnUrl, string RedirectUri, DateTimeOffset ExpiresAt);
+public sealed record PendingLogin(string Nonce, string CodeVerifier, string ReturnUrl, string RedirectUri, DateTimeOffset ExpiresAt, int? LinkUserId = null);
+
+public sealed record PendingLink(int UserID, DateTimeOffset ExpiresAt);
 
 public sealed record PendingExchange(int UserID, string Username, string Issuer, string Subject, DateTimeOffset ExpiresAt);
 
@@ -23,14 +25,16 @@ public sealed class OidcFlowStore(TimeProvider? clock = null)
 
     private readonly ConcurrentDictionary<string, PendingExchange> _exchanges = new();
 
-    public string AddLogin(string nonce, string codeVerifier, string returnUrl, string redirectUri)
+    private readonly ConcurrentDictionary<string, PendingLink> _links = new();
+
+    public string AddLogin(string nonce, string codeVerifier, string returnUrl, string redirectUri, int? linkUserId = null)
     {
         Sweep(_logins, l => l.ExpiresAt);
         if (_logins.Count >= MaxEntries)
             throw new OidcException("busy", "Too many sign-ins in progress.");
 
         var state = RandomToken();
-        _logins[state] = new PendingLogin(nonce, codeVerifier, returnUrl, redirectUri, _clock.GetUtcNow() + LoginLifetime);
+        _logins[state] = new PendingLogin(nonce, codeVerifier, returnUrl, redirectUri, _clock.GetUtcNow() + LoginLifetime, linkUserId);
         return state;
     }
 
@@ -50,6 +54,20 @@ public sealed class OidcFlowStore(TimeProvider? clock = null)
 
     public PendingExchange? TakeExchange(string? code)
         => Take(_exchanges, code, e => e.ExpiresAt);
+
+    public string AddLinkTicket(int userId)
+    {
+        Sweep(_links, l => l.ExpiresAt);
+        if (_links.Count >= MaxEntries)
+            throw new OidcException("busy", "Too many sign-ins in progress.");
+
+        var ticket = RandomToken();
+        _links[ticket] = new PendingLink(userId, _clock.GetUtcNow() + ExchangeLifetime);
+        return ticket;
+    }
+
+    public PendingLink? TakeLinkTicket(string? ticket)
+        => Take(_links, ticket, l => l.ExpiresAt);
 
     public static string RandomToken()
         => Base64Url(RandomNumberGenerator.GetBytes(32));

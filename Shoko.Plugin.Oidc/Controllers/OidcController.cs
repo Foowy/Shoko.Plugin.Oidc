@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,7 @@ public class OidcController(
     public record ExchangeRequest(string? Code);
 
     [HttpGet("login")]
-    public async Task<IActionResult> Login([FromQuery] string? returnUrl, CancellationToken ct)
+    public async Task<IActionResult> Login([FromQuery] string? returnUrl, [FromQuery] string? link, CancellationToken ct)
     {
         logger.LogInformation("OIDC login requested");
         var config = configurationService.Load<OidcConfiguration>();
@@ -36,10 +37,14 @@ public class OidcController(
 
         try
         {
+            int? linkUserId = null;
+            if (!string.IsNullOrEmpty(link))
+                linkUserId = (store.TakeLinkTicket(link) ?? throw new OidcException("invalid_link", "The link request is invalid or expired.")).UserID;
+
             var verifier = OidcFlowStore.RandomToken();
             var nonce = OidcFlowStore.RandomToken();
             var redirectUri = RedirectUri(config);
-            var state = store.AddLogin(nonce, verifier, Url.IsLocalUrl(returnUrl) ? returnUrl! : "/webui", redirectUri);
+            var state = store.AddLogin(nonce, verifier, Url.IsLocalUrl(returnUrl) ? returnUrl! : "/webui", redirectUri, linkUserId);
             // Ties the callback to the browser that started the login, so a link carrying someone else's state is useless.
             Response.Cookies.Append(StateCookie, state, new CookieOptions
             {
@@ -79,6 +84,13 @@ public class OidcController(
         {
             var config = configurationService.Load<OidcConfiguration>();
             var identity = await provider.CompleteAsync(code, pending, ct);
+            if (pending.LinkUserId is { } linkUserId)
+            {
+                await resolver.LinkAsync(identity, linkUserId, ct);
+                logger.LogInformation("OIDC identity linked to Shoko user {UserID}", linkUserId);
+                return Page(TrampolinePage.Linked(), scriptNonce: false);
+            }
+
             var user = await resolver.ResolveAsync(identity, config, ct);
             var exchange = store.AddExchange(user.LocalID, user.Username, identity.Issuer, identity.Subject);
             logger.LogInformation("OIDC sign-in verified for Shoko user {UserID}", user.LocalID);
@@ -109,14 +121,11 @@ public class OidcController(
         var config = configurationService.Load<OidcConfiguration>();
         var token = await users.GenerateApiTokenForUser(
             user,
-            $"{DeviceNamePrefix(pending.Issuer)}{pending.Subject}",
+            $"{DeviceNames.Prefix(pending.Issuer)}{pending.Subject}",
             DateTime.Now.AddHours(config.SessionHours));
         throttle.Reset(HttpContext);
         return Content(JsonSerializer.Serialize(new { apikey = token.Token, username = user.Username }), "application/json");
     }
-
-    public static string DeviceNamePrefix(string issuer)
-        => $"OIDC - {issuer} - ";
 
     private string RedirectUri(OidcConfiguration config)
     {
@@ -125,6 +134,48 @@ public class OidcController(
             : config.PublicBaseUrl.Trim().TrimEnd('/');
         return baseUrl + OidcConstants.BasePath + "/callback";
     }
+
+    public record LinkStartResponse(string Url);
+
+    [HttpPost("link/start")]
+    [Authorize]
+    public IActionResult StartLink()
+    {
+        var user = users.GetUserFromHttpContext(HttpContext);
+        if (user is null)
+            return Unauthorized();
+
+        var ticket = store.AddLinkTicket(user.LocalID);
+        return Content(JsonSerializer.Serialize(new { url = $"{OidcConstants.BasePath}/login?link={Uri.EscapeDataString(ticket)}" }), "application/json");
+    }
+
+    [HttpGet("link")]
+    [Authorize]
+    public async Task<IActionResult> GetLinks(CancellationToken ct)
+    {
+        var user = users.GetUserFromHttpContext(HttpContext);
+        if (user is null)
+            return Unauthorized();
+
+        return Content(JsonSerializer.Serialize(new { authorities = await resolver.GetAuthoritiesAsync(user.LocalID, ct) }), "application/json");
+    }
+
+    [HttpDelete("link")]
+    [Authorize]
+    public async Task<IActionResult> Unlink(CancellationToken ct)
+    {
+        var user = users.GetUserFromHttpContext(HttpContext);
+        if (user is null)
+            return Unauthorized();
+
+        await resolver.UnlinkAsync(user.LocalID, ct);
+        return NoContent();
+    }
+
+    [HttpDelete("link/{userId:int}")]
+    [Authorize("admin")]
+    public async Task<IActionResult> UnlinkUser(int userId, CancellationToken ct)
+        => await resolver.UnlinkAsync(userId, ct) > 0 ? NoContent() : NotFound();
 
     private string? _nonce;
 

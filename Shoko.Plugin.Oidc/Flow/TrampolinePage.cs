@@ -38,6 +38,13 @@ public static class TrampolinePage
             """;
     }
 
+    public static string Linked()
+        => """
+            <!doctype html>
+            <html lang="en"><head><meta charset="utf-8"><title>Linked</title></head>
+            <body><p>Your Shoko account is now linked to this sign-in.</p><p><a href="/webui">Back to Shoko</a></p></body></html>
+            """;
+
     public static string Error(string code)
         => $$"""
             <!doctype html>

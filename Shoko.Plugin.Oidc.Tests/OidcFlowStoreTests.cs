@@ -77,4 +77,28 @@ public class OidcFlowStoreTests
     [Fact]
     public void Challenge_MatchesTheRfc7636Example()
         => Assert.Equal("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", OidcFlowStore.ChallengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"));
+
+    [Fact]
+    public void ALinkTicket_IsSingleUseAndExpires()
+    {
+        var clock = new Clock();
+        var store = new OidcFlowStore(clock);
+        var used = store.AddLinkTicket(4);
+        var stale = store.AddLinkTicket(5);
+
+        Assert.Equal(4, store.TakeLinkTicket(used)?.UserID);
+        Assert.Null(store.TakeLinkTicket(used));
+
+        clock.Now += OidcFlowStore.ExchangeLifetime + TimeSpan.FromSeconds(1);
+        Assert.Null(store.TakeLinkTicket(stale));
+    }
+
+    [Fact]
+    public void ALoginStartedForLinking_CarriesTheUserThroughTheRedirect()
+    {
+        var store = new OidcFlowStore(new Clock());
+        var state = store.AddLogin("n", "v", "/webui", "https://x/callback", linkUserId: 7);
+
+        Assert.Equal(7, store.TakeLogin(state)?.LinkUserId);
+    }
 }
