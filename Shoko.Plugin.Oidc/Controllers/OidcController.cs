@@ -29,6 +29,7 @@ public class OidcController(
     [HttpGet("login")]
     public async Task<IActionResult> Login([FromQuery] string? returnUrl, CancellationToken ct)
     {
+        logger.LogInformation("OIDC login requested");
         var config = configurationService.Load<OidcConfiguration>();
         if (!config.IsConfigured)
             return ErrorPage("not_configured");
@@ -64,6 +65,7 @@ public class OidcController(
     [HttpGet("callback")]
     public async Task<IActionResult> Callback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken ct)
     {
+        logger.LogInformation("OIDC callback received (provider error: {HasError})", !string.IsNullOrEmpty(error));
         var pending = store.TakeLogin(state);
         var boundToThisBrowser = !string.IsNullOrEmpty(state) && Request.Cookies[StateCookie] == state;
         Response.Cookies.Delete(StateCookie, new CookieOptions { Path = OidcConstants.BasePath });
@@ -79,6 +81,7 @@ public class OidcController(
             var identity = await provider.CompleteAsync(code, pending, ct);
             var user = await resolver.ResolveAsync(identity, config, ct);
             var exchange = store.AddExchange(user.LocalID, user.Username, identity.Issuer, identity.Subject);
+            logger.LogInformation("OIDC sign-in verified for Shoko user {UserID}", user.LocalID);
             return Page(TrampolinePage.Success(exchange, pending.ReturnUrl, ScriptNonce()), scriptNonce: true);
         }
         catch (OidcException ex)
@@ -95,6 +98,7 @@ public class OidcController(
             return StatusCode(StatusCodes.Status429TooManyRequests);
 
         var pending = store.TakeExchange(request.Code);
+        logger.LogInformation("OIDC code exchange (valid: {Valid})", pending is not null);
         var user = pending is null ? null : users.GetUserByID(pending.UserID);
         if (pending is null || user is null)
         {
