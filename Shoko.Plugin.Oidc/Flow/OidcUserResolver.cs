@@ -1,0 +1,54 @@
+using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
+using Shoko.Abstractions.User;
+using Shoko.Abstractions.User.Services;
+using Shoko.Abstractions.User.Update;
+using Shoko.Plugin.Oidc.Config;
+using Shoko.Plugin.Oidc.Data;
+
+namespace Shoko.Plugin.Oidc.Flow;
+
+/// <summary>Maps a verified identity to a Shoko user through the link table. Never matches an existing account by name or email.</summary>
+public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory, IUserService users)
+{
+    public async Task<IUser> ResolveAsync(OidcIdentity identity, OidcConfiguration config, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var link = await FindAsync(db, identity, ct);
+        if (link is not null)
+            return users.GetUserByID(link.UserID) ?? throw new OidcException("user_missing", "The linked Shoko user no longer exists.");
+
+        if (!config.AutoCreateUsers)
+            throw new OidcException("not_linked", "This sign-in is not linked to a Shoko user.");
+
+        var username = identity.GetUsername(config.UsernameClaim);
+        if (users.GetUserByUsername(username) is not null)
+            throw new OidcException("username_taken", "A Shoko user with that name already exists.");
+
+        var created = await users.CreateUser(new UserUpdate
+        {
+            Username = username,
+            Password = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
+            IsAdmin = false,
+        });
+
+        db.Links.Add(new OidcLink { Authority = identity.Issuer, Subject = identity.Subject, UserID = created.LocalID });
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return created;
+        }
+        catch (DbUpdateException)
+        {
+            // Another sign-in for the same subject won the race; drop the account this one made.
+            await users.DeleteUser(created);
+            await using var retry = await dbFactory.CreateDbContextAsync(ct);
+            var winner = await FindAsync(retry, identity, ct)
+                ?? throw new OidcException("link_failed", "The sign-in could not be linked.");
+            return users.GetUserByID(winner.UserID) ?? throw new OidcException("user_missing", "The linked Shoko user no longer exists.");
+        }
+    }
+
+    private static Task<OidcLink?> FindAsync(OidcDbContext db, OidcIdentity identity, CancellationToken ct)
+        => db.Links.AsNoTracking().FirstOrDefaultAsync(l => l.Authority == identity.Issuer && l.Subject == identity.Subject, ct);
+}
