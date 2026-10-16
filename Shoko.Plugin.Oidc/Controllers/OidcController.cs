@@ -48,7 +48,7 @@ public class OidcController(
                 Path = OidcConstants.BasePath,
                 MaxAge = OidcFlowStore.LoginLifetime,
             });
-            return Redirect((await provider.BuildAuthorizeUrlAsync(redirectUri, state, nonce, verifier, ct)).ToString());
+            return Redirect((await provider.BuildAuthorizeUrlAsync(redirectUri, state, nonce, verifier, ct)).AbsoluteUri);
         }
         catch (OidcException ex)
         {

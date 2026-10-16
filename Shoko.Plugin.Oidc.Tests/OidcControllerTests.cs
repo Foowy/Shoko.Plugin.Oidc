@@ -125,4 +125,40 @@ public class OidcControllerTests
         Assert.Contains("invalid_state", result.Content);
         Assert.Null(_store.TakeLogin(state));
     }
+
+    [Fact]
+    public async Task Login_RedirectsToTheProviderWithAProperlyEscapedUrlAndBindsTheStateToACookie()
+    {
+        await using var provider = new MockProvider();
+        var config = new OidcConfiguration
+        {
+            Authority = provider.Authority,
+            ClientId = MockProvider.ClientId,
+            ClientSecret = MockProvider.ClientSecret,
+            AllowInsecureHttp = true,
+            PublicBaseUrl = "https://shoko.example/",
+        };
+        var configService = new Mock<IConfigurationService>();
+        configService.Setup(c => c.Load<OidcConfiguration>(It.IsAny<bool>())).Returns(config);
+        var controller = new OidcController(
+            configService.Object,
+            new OidcProviderClient(new HttpClient(), () => config),
+            _store,
+            new OidcUserResolver(new Mock<IDbContextFactory<Data.OidcDbContext>>().Object, _users.Object),
+            _users.Object,
+            _throttle.Object,
+            NullLogger<OidcController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+            Url = new Mock<IUrlHelper>().Object,
+        };
+
+        var result = Assert.IsType<RedirectResult>(await controller.Login(null, CancellationToken.None));
+
+        Assert.StartsWith(provider.Origin + "/authorize?", result.Url);
+        Assert.DoesNotContain(' ', result.Url);
+        Assert.Contains("scope=openid%20profile%20email", result.Url);
+        Assert.Contains("redirect_uri=https%3A%2F%2Fshoko.example%2Fapi%2Fplugin%2FOidc%2Fcallback", result.Url);
+        Assert.Contains("shoko_oidc_state=", controller.Response.Headers.SetCookie.ToString());
+    }
 }
