@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [master]
+    # The release workflow's manifest commit lands right after a merge and would cancel its run.
+    paths-ignore: [manifest.json]
   pull_request:
     branches: [master]
 
