@@ -12,5 +12,34 @@
   ],
   "image_url": null,
   "icon_url": null,
-  "releases": []
+  "releases": [
+    {
+      "version": "0.1.0",
+      "tag": "v0.1.0",
+      "source_revision": "ef2b0aeedfce62cc177707be70d77623cd103f15",
+      "released_at": "2026-10-17T17:57:07Z",
+      "channel": "Dev",
+      "release_notes": "First public pre-release. Sign in to Shoko Server with an OpenID Connect provider instead of a Shoko password. This is an alpha: it has been tested against eight providers on a throwaway server, but not approved for protecting a real one.\n\nIt needs a Shoko Server build from v6.0.0-dev.529 or later (it is built against Shoko.Abstractions alpha.107). Install it by extracting the zip into `Shoko.CLI/plugins/Oidc/` and restarting Shoko. Setup and every setting are in the README.\n\n**Changes:**\n- Authorization code flow with PKCE, discovery, ID token validation and userinfo merging\n- Sign-in button on the WebUI login page for WebUIs that read the `login-method` feature (draft ShokoAnime/Shoko-WebUI#1512)\n- Link an existing Shoko account to a provider identity, or create accounts on first sign-in\n- Map a provider group or role to Shoko admin on each sign-in\n- Backchannel URL and a CA certificate file for providers Shoko cannot reach at their public address or that use a private CA\n- Tested against Authentik, Keycloak, Authelia, Kanidm, Zitadel, Dex, Pocket ID and tinyauth; notes per provider are in `docs/providers.md`\n\n**Full Changelog**: https://github.com/Foowy/Shoko.Plugin.Oidc/commits/v0.1.0",
+      "archives": [
+        {
+          "runtime": "linux-arm64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Foowy/Shoko.Plugin.Oidc/releases/download/v0.1.0/Shoko.Plugin.Oidc-v0.1.0-dev_linux-arm64.zip",
+          "checksum": "150a02f5c3aebbe109875007b6f529fc2975ffc9bb4675410beeb3623da59368"
+        },
+        {
+          "runtime": "linux-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Foowy/Shoko.Plugin.Oidc/releases/download/v0.1.0/Shoko.Plugin.Oidc-v0.1.0-dev_linux-x64.zip",
+          "checksum": "9943a015c700ee02bedbda7cc5df278b2ef0ad004d17ee9e907816179740a846"
+        },
+        {
+          "runtime": "win-x64",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/Foowy/Shoko.Plugin.Oidc/releases/download/v0.1.0/Shoko.Plugin.Oidc-v0.1.0-dev_win-x64.zip",
+          "checksum": "c6ca3a9da49daf350f07a0b7383739d8448ec23042d9b3436d5abe3638778d4e"
+        }
+      ]
+    }
+  ]
 }
