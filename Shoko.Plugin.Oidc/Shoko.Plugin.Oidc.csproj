@@ -21,7 +21,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.16.0" ExcludeAssets="runtime" />
     <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.107" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" ExcludeAssets="runtime" />
-    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.3.2" PrivateAssets="all" />
+    <PackageReference Include="Shoko.BuildTools.Targets" Version="0.3.4" PrivateAssets="all" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>
