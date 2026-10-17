@@ -104,6 +104,13 @@ public sealed class OidcAdminGroupTests : IDisposable
     }
 
     [Fact]
+    public async Task ARolesObject_MatchesOnItsKeys()
+    {
+        await SignIn(User(5, false), new JsonObject { ["shoko-admins"] = new JsonObject { ["org-1"] = "example.test" } });
+        VerifyAdminSet(true);
+    }
+
+    [Fact]
     public async Task APartialGroupName_DoesNotMatch()
     {
         await SignIn(User(5, false), new JsonArray("shoko-admins-extra"));
