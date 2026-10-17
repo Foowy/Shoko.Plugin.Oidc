@@ -46,6 +46,14 @@ public class OidcConfiguration : IPluginConfiguration, IVisibleConfiguration
     public string UsernameClaim { get; set; } = "preferred_username";
 
     [SectionName("Users")]
+    [Display(Name = "Admin Claim", Description = "Claim that lists the user's groups or roles.")]
+    public string AdminClaim { get; set; } = "groups";
+
+    [SectionName("Users")]
+    [Display(Name = "Admin Group", Description = "Members of this group are made Shoko admins on sign-in, everyone else is demoted. Leave blank to manage admins in Shoko. Nothing changes if the provider sends no value for the claim, and the last admin is never demoted.")]
+    public string? AdminGroup { get; set; }
+
+    [SectionName("Users")]
     [Display(Name = "Session Hours", Description = "How long a sign-in stays valid.")]
     [Range(1, 24 * 365)]
     public int SessionHours { get; set; } = 168;

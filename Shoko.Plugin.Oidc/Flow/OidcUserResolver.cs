@@ -12,11 +12,30 @@ namespace Shoko.Plugin.Oidc.Flow;
 public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory, IUserService users)
 {
     public async Task<IUser> ResolveAsync(OidcIdentity identity, OidcConfiguration config, CancellationToken ct)
+        => await SyncAdminAsync(await ResolveUserAsync(identity, config, ct), identity, config);
+
+    private async Task<IUser> SyncAdminAsync(IUser user, OidcIdentity identity, OidcConfiguration config)
+    {
+        if (string.IsNullOrWhiteSpace(config.AdminGroup) || identity.IsInGroup(config.AdminClaim, config.AdminGroup.Trim()) is not { } admin || admin == user.IsAdmin)
+            return user;
+
+        if (!admin && !users.GetUsers().Any(u => u.IsAdmin && u.LocalID != user.LocalID))
+            return user;
+
+        return await users.UpdateUser(user, new UserUpdate { IsAdmin = admin });
+    }
+
+    private async Task<IUser> ResolveUserAsync(OidcIdentity identity, OidcConfiguration config, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var link = await FindAsync(db, identity, ct);
         if (link is not null)
-            return users.GetUserByID(link.UserID) ?? throw new OidcException("user_missing", "The linked Shoko user no longer exists.");
+        {
+            if (users.GetUserByID(link.UserID) is { } linked)
+                return linked;
+
+            await DropStaleLinkAsync(db, link, ct);
+        }
 
         if (!config.AutoCreateUsers)
             throw new OidcException("not_linked", "This sign-in is not linked to a Shoko user.");
@@ -49,6 +68,12 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
         }
     }
 
+    /// <summary>Deleting a Shoko user does not touch the link table, so a link can outlive its user and would otherwise block the identity for good.</summary>
+    private static async Task DropStaleLinkAsync(OidcDbContext db, OidcLink link, CancellationToken ct)
+    {
+        await db.Links.Where(l => l.ID == link.ID).ExecuteDeleteAsync(ct);
+    }
+
     private static Task<OidcLink?> FindAsync(OidcDbContext db, OidcIdentity identity, CancellationToken ct)
         => db.Links.AsNoTracking().FirstOrDefaultAsync(l => l.Authority == identity.Issuer && l.Subject == identity.Subject, ct);
 
@@ -56,6 +81,12 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var existing = await FindAsync(db, identity, ct);
+        if (existing is not null && existing.UserID != userId && users.GetUserByID(existing.UserID) is null)
+        {
+            await DropStaleLinkAsync(db, existing, ct);
+            existing = null;
+        }
+
         if (existing is not null)
         {
             if (existing.UserID == userId)

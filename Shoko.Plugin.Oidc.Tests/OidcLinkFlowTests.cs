@@ -103,6 +103,7 @@ public sealed class OidcLinkFlowTests : IDisposable
     {
         await using var provider = new MockProvider();
         await LinkThroughTheProvider(provider, userId: 5, subject: "sub-1");
+        _users.Setup(u => u.GetUserByID(5)).Returns(Mock.Of<IUser>());
 
         var page = await LinkThroughTheProvider(provider, userId: 6, subject: "sub-1");
 
