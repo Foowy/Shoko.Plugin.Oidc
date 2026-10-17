@@ -54,7 +54,7 @@ public class OidcConfiguration : IPluginConfiguration, IVisibleConfiguration
     public string AdminClaim { get; set; } = "groups";
 
     [SectionName("Users")]
-    [Display(Name = "Admin Group", Description = "Members of this group are made Shoko admins on sign-in, everyone else is demoted. Leave blank to manage admins in Shoko. Nothing changes if the provider sends no value for the claim, and the last admin is never demoted.")]
+    [Display(Name = "Admin Group", Description = "Members of this group are made Shoko admins on sign-in, everyone else is demoted. Add the groups scope to Scopes if your provider needs it. Leave blank to manage admins in Shoko. Nothing changes if the provider sends no value for the claim, and the last admin is never demoted.")]
     public string? AdminGroup { get; set; }
 
     [SectionName("Users")]
