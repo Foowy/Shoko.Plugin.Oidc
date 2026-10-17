@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      nuget:
+        patterns:
+          - "*"
+    ignore:
+      # Compile-only refs the Shoko host supplies at runtime. They must match the host's
+      # bundled versions or the plugin fails to load, and CI only compiles, so an auto-merged
+      # bump would pass. Bump by hand against the host's Shoko.Server.deps.json.
+      - dependency-name: "Asp.Versioning.*"
+      - dependency-name: "Shoko.Abstractions"
+      - dependency-name: "Microsoft.IdentityModel.*"
+      - dependency-name: "Microsoft.EntityFrameworkCore.*"
+      # Track ShokoServer's test stack; xunit v4 breaks dotnet test there.
+      - dependency-name: "xunit.*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
