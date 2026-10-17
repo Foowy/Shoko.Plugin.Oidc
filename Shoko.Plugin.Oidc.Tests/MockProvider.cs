@@ -117,12 +117,21 @@ public sealed class MockProvider : IAsyncDisposable
         app.MapGet(PathPrefix + "/jwks", () =>
         {
             var jwk = JsonWebKeyConverter.ConvertFromSecurityKey(_key);
-            var json = new JsonObject { ["keys"] = new JsonArray(JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(new
+            var json = new JsonObject
             {
-                kty = jwk.Kty, kid = jwk.Kid, use = "sig",
-                alg = UseEcdsa ? "ES256" : "RS256",
-                n = jwk.N, e = jwk.E, crv = jwk.Crv, x = jwk.X, y = jwk.Y,
-            }, new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }))) };
+                ["keys"] = new JsonArray(JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    kty = jwk.Kty,
+                    kid = jwk.Kid,
+                    use = "sig",
+                    alg = UseEcdsa ? "ES256" : "RS256",
+                    n = jwk.N,
+                    e = jwk.E,
+                    crv = jwk.Crv,
+                    x = jwk.X,
+                    y = jwk.Y,
+                }, new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull })))
+            };
             return Results.Text(json.ToJsonString(), "application/json");
         });
 

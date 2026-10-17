@@ -1,0 +1,16 @@
+{
+  "id": "6f0c8e52-3b1d-4a7e-9d24-5c81a0b7e3f9",
+  "name": "OIDC Sign-in",
+  "overview": "Sign in to Shoko Server with an OpenID Connect provider such as Authentik, Keycloak, Authelia, Zitadel, Kanidm, Dex, Pocket ID or tinyauth.",
+  "authors": "Foowy",
+  "repository_url": "https://github.com/Foowy/Shoko.Plugin.Oidc",
+  "homepage_url": null,
+  "tags": [
+    "authentication",
+    "oidc",
+    "sso"
+  ],
+  "image_url": null,
+  "icon_url": null,
+  "releases": []
+}
