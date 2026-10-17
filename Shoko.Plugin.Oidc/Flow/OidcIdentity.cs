@@ -23,4 +23,16 @@ public sealed class OidcIdentity(string issuer, string subject, JsonObject claim
 
         return Subject;
     }
+
+    /// <summary>Whether <paramref name="group"/> is among the values of <paramref name="claim"/>; null when the provider sent no usable value for it.</summary>
+    public bool? IsInGroup(string? claim, string group)
+    {
+        var values = Claims[claim ?? ""] switch
+        {
+            JsonArray array => array.Select(n => n is JsonValue v && v.TryGetValue<string>(out var t) ? t : null).OfType<string>().ToList(),
+            JsonValue value when value.TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text) => [.. text.Split(' ', StringSplitOptions.RemoveEmptyEntries)],
+            _ => null,
+        };
+        return values?.Contains(group, StringComparer.Ordinal);
+    }
 }

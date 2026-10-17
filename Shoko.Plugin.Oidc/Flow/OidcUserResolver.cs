@@ -12,6 +12,20 @@ namespace Shoko.Plugin.Oidc.Flow;
 public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory, IUserService users)
 {
     public async Task<IUser> ResolveAsync(OidcIdentity identity, OidcConfiguration config, CancellationToken ct)
+        => await SyncAdminAsync(await ResolveUserAsync(identity, config, ct), identity, config);
+
+    private async Task<IUser> SyncAdminAsync(IUser user, OidcIdentity identity, OidcConfiguration config)
+    {
+        if (string.IsNullOrWhiteSpace(config.AdminGroup) || identity.IsInGroup(config.AdminClaim, config.AdminGroup.Trim()) is not { } admin || admin == user.IsAdmin)
+            return user;
+
+        if (!admin && !users.GetUsers().Any(u => u.IsAdmin && u.LocalID != user.LocalID))
+            return user;
+
+        return await users.UpdateUser(user, new UserUpdate { IsAdmin = admin });
+    }
+
+    private async Task<IUser> ResolveUserAsync(OidcIdentity identity, OidcConfiguration config, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var link = await FindAsync(db, identity, ct);
