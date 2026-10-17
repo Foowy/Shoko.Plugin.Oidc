@@ -21,6 +21,8 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
 
     private string? _managerKey;
 
+    private DateTime _lastDrop;
+
     private ConfigurationManager<OpenIdConnectConfiguration>? _manager;
 
     public async Task<Uri> BuildAuthorizeUrlAsync(string redirectUri, string state, string nonce, string codeVerifier, CancellationToken ct)
@@ -90,6 +92,21 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw new OidcException("discovery_failed", "Could not read the provider's discovery document.", ex);
+        }
+    }
+
+    /// <summary>RequestRefresh only refreshes in the background and is throttled to every 5 minutes, so a rotated signing key would fail sign-ins for that long. A new manager fetches synchronously; limited to once per 10 seconds.</summary>
+    private bool TryDropManager()
+    {
+        lock (_lock)
+        {
+            if (DateTime.UtcNow - _lastDrop < TimeSpan.FromSeconds(10))
+                return false;
+
+            _lastDrop = DateTime.UtcNow;
+            _manager = null;
+            _managerKey = null;
+            return true;
         }
     }
 
@@ -184,9 +201,11 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
         var result = await handler.ValidateTokenAsync(idToken, Parameters(config, discovery));
         if (!result.IsValid && result.Exception is SecurityTokenSignatureKeyNotFoundException)
         {
-            Manager(config).RequestRefresh();
-            discovery = await GetDiscoveryAsync(config, ct);
-            result = await handler.ValidateTokenAsync(idToken, Parameters(config, discovery));
+            if (TryDropManager())
+            {
+                discovery = await GetDiscoveryAsync(config, ct);
+                result = await handler.ValidateTokenAsync(idToken, Parameters(config, discovery));
+            }
         }
 
         if (!result.IsValid || result.SecurityToken is not JsonWebToken jwt)
