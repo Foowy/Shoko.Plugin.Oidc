@@ -17,7 +17,8 @@ public class ServiceRegistration : IPluginServiceRegistration
             {
                 var trust = new CaTrust(() => provider.GetRequiredService<IConfigurationService>().Load<OidcConfiguration>().CaCertificatePath);
                 return new SocketsHttpHandler { SslOptions = { RemoteCertificateValidationCallback = trust.Validate } };
-            });
+            })
+            .AddHttpMessageHandler(provider => new BackchannelHandler(() => provider.GetRequiredService<IConfigurationService>().Load<OidcConfiguration>()));
         serviceCollection.AddSingleton<OidcFlowStore>();
         serviceCollection.AddSingleton(provider => new OidcProviderClient(
             provider.GetRequiredService<IHttpClientFactory>().CreateClient("Shoko.Plugin.Oidc"),
