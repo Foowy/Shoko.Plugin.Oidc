@@ -26,6 +26,10 @@ public class OidcConfiguration : IPluginConfiguration, IVisibleConfiguration
     public string? ClientSecret { get; set; }
 
     [SectionName("Provider")]
+    [Display(Name = "Backchannel URL", Description = "Address Shoko itself uses to reach the provider when the Authority is not reachable from the server, for example http://authentik:9000 inside a Docker network. Only the scheme, host and port are used. Requests to the Authority's host go here with the original Host header. Browsers still use the Authority. Leave blank otherwise.")]
+    public string? BackchannelUrl { get; set; }
+
+    [SectionName("Provider")]
     [Display(Name = "Public Base URL", Description = "Address users reach Shoko at, for example https://shoko.example.com. Register {URL}/api/plugin/Oidc/callback as the redirect URI at the provider.")]
     public string? PublicBaseUrl { get; set; }
 
