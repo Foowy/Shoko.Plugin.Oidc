@@ -24,7 +24,7 @@ public class PluginTests
             DisplayName = "Authentik",
         }));
 
-        Assert.Equal("oidc-login", feature.Name);
+        Assert.Equal("login-method", feature.Name);
         Assert.Equal(PluginFeatureVisibility.Anonymous, feature.Visibility);
         Assert.Equal("Authentik", (string?)feature.Metadata?["displayName"]);
         Assert.Equal("/api/plugin/Oidc/login", (string?)feature.Metadata?["loginUrl"]);

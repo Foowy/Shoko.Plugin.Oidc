@@ -6,7 +6,7 @@ public static class OidcConstants
 
     public const string Name = "OIDC Sign-in";
 
-    public const string FeatureName = "oidc-login";
+    public const string FeatureName = "login-method";
 
     public const string BasePath = "/api/plugin/Oidc";
 }
