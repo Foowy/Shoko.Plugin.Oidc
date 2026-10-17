@@ -34,7 +34,8 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
             if (users.GetUserByID(link.UserID) is { } linked)
                 return linked;
 
-            await DropStaleLinkAsync(db, link, ct);
+            // Deleting a Shoko user does not touch the link table, and a stale link would block the identity for good.
+            await db.Links.Where(l => l.ID == link.ID).ExecuteDeleteAsync(ct);
         }
 
         if (!config.AutoCreateUsers)
@@ -54,7 +55,8 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
         db.Links.Add(new OidcLink { Authority = identity.Issuer, Subject = identity.Subject, UserID = created.LocalID });
         try
         {
-            await db.SaveChangesAsync(ct);
+            // Not tied to the request: aborting between creating the user and saving the link would leave an orphan account that blocks this name.
+            await db.SaveChangesAsync(CancellationToken.None);
             return created;
         }
         catch (DbUpdateException)
@@ -66,12 +68,11 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
                 ?? throw new OidcException("link_failed", "The sign-in could not be linked.");
             return users.GetUserByID(winner.UserID) ?? throw new OidcException("user_missing", "The linked Shoko user no longer exists.");
         }
-    }
-
-    /// <summary>Deleting a Shoko user does not touch the link table, so a link can outlive its user and would otherwise block the identity for good.</summary>
-    private static async Task DropStaleLinkAsync(OidcDbContext db, OidcLink link, CancellationToken ct)
-    {
-        await db.Links.Where(l => l.ID == link.ID).ExecuteDeleteAsync(ct);
+        catch
+        {
+            await users.DeleteUser(created);
+            throw;
+        }
     }
 
     private static Task<OidcLink?> FindAsync(OidcDbContext db, OidcIdentity identity, CancellationToken ct)
@@ -83,7 +84,7 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
         var existing = await FindAsync(db, identity, ct);
         if (existing is not null && existing.UserID != userId && users.GetUserByID(existing.UserID) is null)
         {
-            await DropStaleLinkAsync(db, existing, ct);
+            await db.Links.Where(l => l.ID == existing.ID).ExecuteDeleteAsync(ct);
             existing = null;
         }
 
@@ -114,7 +115,7 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
         return await db.Links.AsNoTracking().Where(l => l.UserID == userId).Select(l => l.Authority).ToListAsync(ct);
     }
 
-    /// <summary>Removes the user's links and invalidates the tokens those sign-ins issued. Returns how many links were removed.</summary>
+    /// <summary>Invalidates the tokens those sign-ins issued, then removes the user's links. Returns how many links were removed. Tokens go first so a failure partway leaves the links in place and the call can be retried.</summary>
     public async Task<int> UnlinkAsync(int userId, CancellationToken ct)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -122,14 +123,13 @@ public sealed class OidcUserResolver(IDbContextFactory<OidcDbContext> dbFactory,
         if (links.Count is 0)
             return 0;
 
-        db.Links.RemoveRange(links);
-        await db.SaveChangesAsync(ct);
-
         if (users.GetUserByID(userId) is { } user)
             foreach (var token in users.GetApiTokensForUser(user))
                 if (links.Any(l => token.Device.StartsWith(DeviceNames.Prefix(l.Authority), StringComparison.Ordinal)))
                     await users.InvalidateApiToken(token);
 
+        db.Links.RemoveRange(links);
+        await db.SaveChangesAsync(ct);
         return links.Count;
     }
 }

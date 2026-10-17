@@ -7,7 +7,7 @@ public sealed record PendingLogin(string Nonce, string CodeVerifier, string Retu
 
 public sealed record PendingLink(int UserID, DateTimeOffset ExpiresAt);
 
-public sealed record PendingExchange(int UserID, string Username, string Issuer, string Subject, DateTimeOffset ExpiresAt);
+public sealed record PendingExchange(int UserID, string Issuer, string Subject, DateTimeOffset ExpiresAt);
 
 /// <summary>In-memory, single-use state for the redirect round trip and the code the WebUI trades for a token.</summary>
 public sealed class OidcFlowStore(TimeProvider? clock = null)
@@ -16,7 +16,7 @@ public sealed class OidcFlowStore(TimeProvider? clock = null)
 
     public static readonly TimeSpan ExchangeLifetime = TimeSpan.FromSeconds(60);
 
-    // Both maps are open to unauthenticated callers, so they are capped instead of growing without bound.
+    // The maps are open to unauthenticated callers, so they are capped instead of growing without bound.
     private const int MaxEntries = 2000;
 
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
@@ -30,8 +30,9 @@ public sealed class OidcFlowStore(TimeProvider? clock = null)
     public string AddLogin(string nonce, string codeVerifier, string returnUrl, string redirectUri, int? linkUserId = null)
     {
         Sweep(_logins, l => l.ExpiresAt);
-        if (_logins.Count >= MaxEntries)
-            throw new OidcException("busy", "Too many sign-ins in progress.");
+        // /login is anonymous, so a flood must not be able to lock everyone out until the entries expire: make room by dropping the oldest instead.
+        if (_logins.Count >= MaxEntries && _logins.MinBy(pair => pair.Value.ExpiresAt).Key is { } oldest)
+            _logins.TryRemove(oldest, out _);
 
         var state = RandomToken();
         _logins[state] = new PendingLogin(nonce, codeVerifier, returnUrl, redirectUri, _clock.GetUtcNow() + LoginLifetime, linkUserId);
@@ -41,14 +42,14 @@ public sealed class OidcFlowStore(TimeProvider? clock = null)
     public PendingLogin? TakeLogin(string? state)
         => Take(_logins, state, l => l.ExpiresAt);
 
-    public string AddExchange(int userId, string username, string issuer, string subject)
+    public string AddExchange(int userId, string issuer, string subject)
     {
         Sweep(_exchanges, e => e.ExpiresAt);
         if (_exchanges.Count >= MaxEntries)
             throw new OidcException("busy", "Too many sign-ins in progress.");
 
         var code = RandomToken();
-        _exchanges[code] = new PendingExchange(userId, username, issuer, subject, _clock.GetUtcNow() + ExchangeLifetime);
+        _exchanges[code] = new PendingExchange(userId, issuer, subject, _clock.GetUtcNow() + ExchangeLifetime);
         return code;
     }
 

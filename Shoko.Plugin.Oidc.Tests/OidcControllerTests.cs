@@ -57,7 +57,7 @@ public class OidcControllerTests
         var user = SignedInUser();
         _users.Setup(u => u.GenerateApiTokenForUser(user.Object, "OIDC - https://sso.example - sub-1", It.IsAny<DateTime>()))
             .ReturnsAsync(new ApiToken(user.Object, "OIDC - https://sso.example - sub-1", "the-key", null));
-        var code = _store.AddExchange(3, "alice", "https://sso.example", "sub-1");
+        var code = _store.AddExchange(3, "https://sso.example", "sub-1");
 
         var first = Assert.IsType<ContentResult>(await _controller.Exchange(new OidcController.ExchangeRequest(code)));
         var second = await _controller.Exchange(new OidcController.ExchangeRequest(code));
@@ -78,7 +78,7 @@ public class OidcControllerTests
             .Callback<IUser, string, DateTime>((_, _, at) => expiresAt = at)
             .ReturnsAsync(new ApiToken(user.Object, "d", "k", null));
 
-        await _controller.Exchange(new OidcController.ExchangeRequest(_store.AddExchange(3, "alice", "i", "s")));
+        await _controller.Exchange(new OidcController.ExchangeRequest(_store.AddExchange(3, "i", "s")));
 
         Assert.InRange(expiresAt!.Value, DateTime.Now.AddHours(2).AddMinutes(-1), DateTime.Now.AddHours(2).AddMinutes(1));
     }
@@ -97,7 +97,7 @@ public class OidcControllerTests
     public async Task Exchange_ALockedOutCallerGets429WithoutSpendingTheCode()
     {
         SignedInUser();
-        var code = _store.AddExchange(3, "alice", "i", "s");
+        var code = _store.AddExchange(3, "i", "s");
         _throttle.Setup(t => t.GetRemainingLockout(It.IsAny<HttpContext>())).Returns(TimeSpan.FromMinutes(1));
 
         var result = await _controller.Exchange(new OidcController.ExchangeRequest(code));

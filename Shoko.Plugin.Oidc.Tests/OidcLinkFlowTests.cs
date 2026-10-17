@@ -111,4 +111,21 @@ public sealed class OidcLinkFlowTests : IDisposable
         using var db = NewContext();
         Assert.Equal(5, Assert.Single(db.Links).UserID);
     }
+
+    [Fact]
+    public async Task AnUnexpectedFailureDuringSignIn_EndsOnTheErrorPageInsteadOfA500()
+    {
+        await using var provider = new MockProvider();
+        var config = Config(provider);
+        config.AutoCreateUsers = true;
+        _users.Setup(u => u.CreateUser(It.IsAny<Shoko.Abstractions.User.Update.UserUpdate>())).ThrowsAsync(new InvalidOperationException("rejected the name"));
+        var login = Assert.IsType<RedirectResult>(await NewController(config).Login(null, null, CancellationToken.None));
+        var query = QueryHelpers.ParseQuery(new Uri(login.Url).Query);
+        var state = query["state"].ToString();
+        var code = provider.IssueCode(query["redirect_uri"]!, query["code_challenge"]!, query["nonce"]!, new JsonObject { ["sub"] = "sub-1", ["preferred_username"] = "alice" });
+
+        var page = Assert.IsType<ContentResult>(await NewController(config, stateCookie: state).Callback(code, state, null, CancellationToken.None));
+
+        Assert.Contains("sign_in_failed", page.Content);
+    }
 }

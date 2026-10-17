@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Moq;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.WebUtilities;
 using Shoko.Plugin.Oidc.Config;
@@ -32,9 +34,10 @@ public class OidcProviderClientTests
     }
 
     private static async Task<(OidcProviderClient Client, string Code, PendingLogin Pending)> Start(
-        MockProvider provider, OidcConfiguration config, JsonObject idClaims, JsonObject? userInfo = null, string? nonceAtProvider = null)
+        MockProvider provider, OidcConfiguration config, JsonObject idClaims, JsonObject? userInfo = null, string? nonceAtProvider = null,
+        HttpMessageHandler? handler = null, ILogger? logger = null)
     {
-        var client = new OidcProviderClient(new HttpClient(), () => config);
+        var client = new OidcProviderClient(handler is null ? new HttpClient() : new HttpClient(handler), () => config, logger);
         var verifier = OidcFlowStore.RandomToken();
         var nonce = OidcFlowStore.RandomToken();
         var url = await client.BuildAuthorizeUrlAsync(Redirect, "state-1", nonce, verifier, CancellationToken.None);
@@ -252,4 +255,38 @@ public class OidcProviderClientTests
     public void AuthMethod_AnExplicitChoiceWins()
         => Assert.Equal(OidcTokenAuthMethod.ClientSecretPost,
             OidcProviderClient.ResolveAuthMethod(new OidcConfiguration { ClientSecret = "s", TokenAuthMethod = OidcTokenAuthMethod.ClientSecretPost }, ["client_secret_basic"]));
+
+    private sealed class FailingUserInfo : DelegatingHandler
+    {
+        public FailingUserInfo() : base(new HttpClientHandler()) { }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => request.RequestUri!.AbsolutePath.EndsWith("/userinfo", StringComparison.Ordinal)
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                : await base.SendAsync(request, cancellationToken);
+    }
+
+    [Fact]
+    public async Task ANonStringUserInfoSubject_FailsAsAMismatchInsteadOfThrowing()
+    {
+        await using var provider = new MockProvider();
+
+        var ex = await Assert.ThrowsAsync<OidcException>(() =>
+            Run(provider, Config(provider), Claims(), new JsonObject { ["sub"] = 12345 }));
+
+        Assert.Equal("subject_mismatch", ex.Code);
+    }
+
+    [Fact]
+    public async Task AFailingUserInfoEndpoint_IsLoggedAndTheSignInStillWorks()
+    {
+        await using var provider = new MockProvider();
+        var logger = new Mock<ILogger>();
+        var (client, code, pending) = await Start(provider, Config(provider), Claims(), new JsonObject { ["sub"] = "user-1" }, handler: new FailingUserInfo(), logger: logger.Object);
+
+        var identity = await client.CompleteAsync(code, pending, CancellationToken.None);
+
+        Assert.Equal("user-1", identity.Subject);
+        logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), null, It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
 }

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -12,7 +13,7 @@ using Shoko.Plugin.Oidc.Config;
 namespace Shoko.Plugin.Oidc.Flow;
 
 /// <summary>Talks plain OIDC Core to one provider: discovery, authorize URL, code exchange, ID token and userinfo checks.</summary>
-public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> getConfig)
+public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> getConfig, ILogger? logger = null)
 {
     private static readonly string[] AllowedAlgorithms =
         ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"];
@@ -53,7 +54,7 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
             throw new OidcException("no_id_token", "The provider returned no ID token.");
 
         var claims = await ValidateIdTokenAsync(config, discovery, idToken, pending.Nonce, ct);
-        var subject = claims["sub"]?.GetValue<string>();
+        var subject = Str(claims["sub"]);
         if (string.IsNullOrEmpty(subject))
             throw new OidcException("no_subject", "The ID token has no subject.");
 
@@ -214,10 +215,10 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
         var payload = JsonNode.Parse(Base64UrlEncoder.DecodeBytes(jwt.EncodedPayload)) as JsonObject
             ?? throw new OidcException("invalid_id_token", "The ID token payload is not an object.");
 
-        if (payload["nonce"]?.GetValue<string>() != nonce)
+        if (Str(payload["nonce"]) != nonce)
             throw new OidcException("nonce_mismatch", "The ID token nonce does not match.");
 
-        if (payload["aud"] is JsonArray { Count: > 1 } && payload["azp"]?.GetValue<string>() != config.ClientId)
+        if (payload["aud"] is JsonArray { Count: > 1 } && Str(payload["azp"]) != config.ClientId)
             throw new OidcException("invalid_id_token", "The ID token was issued to another client.");
 
         return payload;
@@ -243,16 +244,23 @@ public sealed class OidcProviderClient(HttpClient http, Func<OidcConfiguration> 
 
         using var response = await SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
+        {
+            logger?.LogWarning("OIDC userinfo answered {StatusCode}, so its claims are not used", (int)response.StatusCode);
             return;
+        }
 
         var info = ParseObject(await response.Content.ReadAsStringAsync(ct), "userinfo_failed");
-        if (info["sub"]?.GetValue<string>() != subject)
+        if (Str(info["sub"]) != subject)
             throw new OidcException("subject_mismatch", "The userinfo subject does not match the ID token.");
 
         foreach (var (name, value) in info)
             if (!claims.ContainsKey(name))
                 claims[name] = value?.DeepClone();
     }
+
+    /// <summary>A claim as a string, or null when the provider sent another type (GetValue would throw).</summary>
+    private static string? Str(JsonNode? node)
+        => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
     private static JsonObject ParseObject(string body, string errorCode)
     {

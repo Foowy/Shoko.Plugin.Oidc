@@ -88,7 +88,7 @@ One identity maps to one user and a user can have one identity per provider. Del
 
 ## Troubleshooting
 
-A failed sign-in ends on a page showing a code. The plugin also logs the code with the underlying cause.
+A failed sign-in ends on a page showing a code. The plugin also logs the code with the underlying cause. A userinfo endpoint that fails is logged as a warning and its claims are skipped, so check the log if group mapping does nothing.
 
 | Code | Usual cause |
 |---|---|
@@ -103,7 +103,12 @@ A failed sign-in ends on a page showing a code. The plugin also logs the code wi
 | `user_already_linked` | While linking: this user is already linked to another identity from the same provider. |
 | `invalid_link`, `link_failed` | The link request expired, was reused, or could not be saved. |
 | `user_missing` | The linked Shoko user was deleted while a sign-in was in flight. |
-| `busy` | Too many sign-ins in flight at once (a sign-in must finish within 10 minutes). |
+| `invalid_state` | The sign-in cookie is missing, expired or belongs to another sign-in, for example when two tabs started a sign-in at once or the page was reloaded. Start again. |
+| `provider_denied` | The provider refused the sign-in or the user declined it. |
+| `exchange_failed` | The final step that trades the sign-in for a Shoko session failed. Start again. |
+| `userinfo_failed` | The provider's userinfo endpoint answered something other than a JSON object (a signed JWT response is not supported). |
+| `sign_in_failed` | Something unexpected failed after the provider accepted the sign-in, for example Shoko rejected the new username. The cause is in the log. |
+| `busy` | Too many sign-ins are waiting for their code or link at once. Pending sign-ins are dropped oldest first when 2000 are in flight, so a flood of `/login` requests slows people down but does not lock them out; rate limit that path at your reverse proxy. |
 
 ## Build
 

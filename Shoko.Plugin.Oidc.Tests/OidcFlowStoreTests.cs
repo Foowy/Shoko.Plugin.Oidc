@@ -39,8 +39,8 @@ public class OidcFlowStoreTests
     {
         var clock = new Clock();
         var store = new OidcFlowStore(clock);
-        var used = store.AddExchange(7, "alice", "https://a", "s1");
-        var stale = store.AddExchange(8, "bob", "https://a", "s2");
+        var used = store.AddExchange(7, "https://a", "s1");
+        var stale = store.AddExchange(8, "https://a", "s2");
 
         Assert.Equal(7, store.TakeExchange(used)?.UserID);
         Assert.Null(store.TakeExchange(used));
@@ -60,18 +60,22 @@ public class OidcFlowStoreTests
     }
 
     [Fact]
-    public void PendingLogins_AreCapped_AndExpiredOnesFreeUpRoom()
+    public void WhenTheStoreIsFull_TheOldestLoginIsDroppedSoNewSignInsStillWork()
     {
         var clock = new Clock();
         var store = new OidcFlowStore(clock);
-        for (var i = 0; i < 2000; i++)
+        var oldest = store.AddLogin("n", "v", "/webui", "https://x/callback");
+        for (var i = 1; i < 2000; i++)
+        {
+            clock.Now += TimeSpan.FromMilliseconds(1);
             store.AddLogin("n", "v", "/webui", "https://x/callback");
+        }
 
-        var ex = Assert.Throws<OidcException>(() => store.AddLogin("n", "v", "/webui", "https://x/callback"));
-        Assert.Equal("busy", ex.Code);
+        clock.Now += TimeSpan.FromMilliseconds(1);
+        var newest = store.AddLogin("n2", "v", "/webui", "https://x/callback");
 
-        clock.Now += OidcFlowStore.LoginLifetime + TimeSpan.FromSeconds(1);
-        store.AddLogin("n", "v", "/webui", "https://x/callback");
+        Assert.Null(store.TakeLogin(oldest));
+        Assert.Equal("n2", store.TakeLogin(newest)?.Nonce);
     }
 
     [Fact]
