@@ -16,6 +16,8 @@ updates:
       - dependency-name: "Shoko.Abstractions"
       - dependency-name: "Microsoft.IdentityModel.*"
       - dependency-name: "Microsoft.EntityFrameworkCore.*"
+      # Supplies the plugin's release metadata; CI would not notice it breaking.
+      - dependency-name: "Shoko.BuildTools.Targets"
       # Track ShokoServer's test stack; xunit v4 breaks dotnet test there.
       - dependency-name: "xunit.*"
         update-types: ["version-update:semver-major"]
