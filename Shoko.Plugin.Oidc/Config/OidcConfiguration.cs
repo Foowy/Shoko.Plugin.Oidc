@@ -41,6 +41,10 @@ public class OidcConfiguration : IPluginConfiguration, IVisibleConfiguration
     [Display(Name = "Allow Plain HTTP", Description = "Only for a provider on a trusted network that has no HTTPS.")]
     public bool AllowInsecureHttp { get; set; }
 
+    [SectionName("Provider")]
+    [Display(Name = "CA Certificate File", Description = "Path to a PEM file with the CA that signed the provider's certificate, for a provider with a private or self-signed CA. Trusted in addition to the system store. Leave blank otherwise.")]
+    public string? CaCertificatePath { get; set; }
+
     [SectionName("Users")]
     [Display(Name = "Username Claim", Description = "Claim used as the username of created accounts. Falls back to preferred_username, email, then the subject.")]
     public string UsernameClaim { get; set; } = "preferred_username";
@@ -50,7 +54,7 @@ public class OidcConfiguration : IPluginConfiguration, IVisibleConfiguration
     public string AdminClaim { get; set; } = "groups";
 
     [SectionName("Users")]
-    [Display(Name = "Admin Group", Description = "Members of this group are made Shoko admins on sign-in, everyone else is demoted. Leave blank to manage admins in Shoko. Nothing changes if the provider sends no value for the claim, and the last admin is never demoted.")]
+    [Display(Name = "Admin Group", Description = "Members of this group are made Shoko admins on sign-in, everyone else is demoted. Add the groups scope to Scopes if your provider needs it. Leave blank to manage admins in Shoko. Nothing changes if the provider sends no value for the claim, and the last admin is never demoted.")]
     public string? AdminGroup { get; set; }
 
     [SectionName("Users")]

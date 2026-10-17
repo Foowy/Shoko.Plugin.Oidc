@@ -12,7 +12,12 @@ public class ServiceRegistration : IPluginServiceRegistration
     public static void RegisterServices(IServiceCollection serviceCollection, IApplicationPaths applicationPaths)
     {
         serviceCollection.AddPluginDbContext<Plugin, OidcDbContext>("oidc");
-        serviceCollection.AddHttpClient("Shoko.Plugin.Oidc", client => client.Timeout = TimeSpan.FromSeconds(30));
+        serviceCollection.AddHttpClient("Shoko.Plugin.Oidc", client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(provider =>
+            {
+                var trust = new CaTrust(() => provider.GetRequiredService<IConfigurationService>().Load<OidcConfiguration>().CaCertificatePath);
+                return new SocketsHttpHandler { SslOptions = { RemoteCertificateValidationCallback = trust.Validate } };
+            });
         serviceCollection.AddSingleton<OidcFlowStore>();
         serviceCollection.AddSingleton(provider => new OidcProviderClient(
             provider.GetRequiredService<IHttpClientFactory>().CreateClient("Shoko.Plugin.Oidc"),
