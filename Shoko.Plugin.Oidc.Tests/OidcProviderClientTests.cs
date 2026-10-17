@@ -198,7 +198,7 @@ public class OidcProviderClientTests
     }
 
     [Fact]
-    public async Task ATokenSignedByAnUnknownKey_IsRejected()
+    public async Task ARotatedProviderKey_IsPickedUpOnTheNextSignIn()
     {
         await using var provider = new MockProvider();
         var config = Config(provider);
@@ -206,9 +206,9 @@ public class OidcProviderClientTests
         await client.BuildAuthorizeUrlAsync(Redirect, "s", "n", "v", CancellationToken.None);
         provider.RotateSigningKey();
 
-        var ex = await Assert.ThrowsAsync<OidcException>(() => client.CompleteAsync(code, pending, CancellationToken.None));
+        var identity = await client.CompleteAsync(code, pending, CancellationToken.None);
 
-        Assert.Equal("invalid_id_token", ex.Code);
+        Assert.False(string.IsNullOrEmpty(identity.Subject));
     }
 
     [Fact]

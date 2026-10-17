@@ -58,7 +58,7 @@ public class OidcController(
         }
         catch (OidcException ex)
         {
-            logger.LogWarning("OIDC login could not start: {Code} ({Message})", ex.Code, ex.Message);
+            logger.LogWarning("OIDC login could not start: {Code} ({Message}) {Cause}", ex.Code, ex.Message, ex.InnerException?.Message);
             return ErrorPage(ex.Code);
         }
     }
@@ -98,7 +98,7 @@ public class OidcController(
         }
         catch (OidcException ex)
         {
-            logger.LogWarning("OIDC sign-in failed: {Code} ({Message})", ex.Code, ex.Message);
+            logger.LogWarning("OIDC sign-in failed: {Code} ({Message}) {Cause}", ex.Code, ex.Message, ex.InnerException?.Message);
             return ErrorPage(ex.Code);
         }
     }
