@@ -150,11 +150,46 @@ public sealed class OidcUserResolverTests : IDisposable
     [Fact]
     public async Task Link_RefusesAnIdentityThatBelongsToAnotherUser()
     {
+        _users.Setup(u => u.GetUserByID(5)).Returns(User(5, "five").Object);
         await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<OidcException>(() => _resolver.LinkAsync(Identity(), 6, CancellationToken.None));
 
         Assert.Equal("subject_taken", ex.Code);
+    }
+
+    [Fact]
+    public async Task Link_ReplacesALinkWhoseUserWasDeleted()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+
+        await _resolver.LinkAsync(Identity(), 6, CancellationToken.None);
+
+        using var db = NewContext();
+        Assert.Equal(6, Assert.Single(db.Links).UserID);
+    }
+
+    [Fact]
+    public async Task SignIn_DropsALinkWhoseUserWasDeletedAndCreatesAFreshAccount()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+        _users.Setup(u => u.CreateUser(It.IsAny<UserUpdate>())).ReturnsAsync(User(9, "alice").Object);
+
+        var user = await _resolver.ResolveAsync(Identity(), new OidcConfiguration { AutoCreateUsers = true }, CancellationToken.None);
+
+        Assert.Equal(9, user.LocalID);
+        using var db = NewContext();
+        Assert.Equal(9, Assert.Single(db.Links).UserID);
+    }
+
+    [Fact]
+    public async Task SignIn_WithADeletedUserAndCreatingOff_IsNotLinked()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<OidcException>(() => _resolver.ResolveAsync(Identity(), new OidcConfiguration(), CancellationToken.None));
+
+        Assert.Equal("not_linked", ex.Code);
     }
 
     [Fact]
