@@ -92,7 +92,7 @@ public class OidcController(
             }
 
             var user = await resolver.ResolveAsync(identity, config, ct);
-            var exchange = store.AddExchange(user.LocalID, user.Username, identity.Issuer, identity.Subject);
+            var exchange = store.AddExchange(user.LocalID, identity.Issuer, identity.Subject);
             logger.LogInformation("OIDC sign-in verified for Shoko user {UserID}", user.LocalID);
             return Page(TrampolinePage.Success(exchange, pending.ReturnUrl, ScriptNonce()), scriptNonce: true);
         }
@@ -100,6 +100,11 @@ public class OidcController(
         {
             logger.LogWarning("OIDC sign-in failed: {Code} ({Message}) {Cause}", ex.Code, ex.Message, ex.InnerException?.Message);
             return ErrorPage(ex.Code);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "OIDC sign-in failed unexpectedly");
+            return ErrorPage("sign_in_failed");
         }
     }
 
@@ -134,8 +139,6 @@ public class OidcController(
             : config.PublicBaseUrl.Trim().TrimEnd('/');
         return baseUrl + OidcConstants.BasePath + "/callback";
     }
-
-    public record LinkStartResponse(string Url);
 
     [HttpPost("link/start")]
     [Authorize]

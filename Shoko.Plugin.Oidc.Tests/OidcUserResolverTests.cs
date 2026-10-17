@@ -224,4 +224,60 @@ public sealed class OidcUserResolverTests : IDisposable
     [Fact]
     public async Task Unlink_ForAUserWithoutLinksDoesNothing()
         => Assert.Equal(0, await _resolver.UnlinkAsync(99, CancellationToken.None));
+
+    [Fact]
+    public async Task Unlink_AFailedTokenRevocation_KeepsTheLinksSoItCanBeRetried()
+    {
+        await _resolver.LinkAsync(Identity(), 5, CancellationToken.None);
+        var user = User(5, "linked");
+        _users.Setup(u => u.GetUserByID(5)).Returns(user.Object);
+        var oidcToken = new ApiToken(user.Object, DeviceNames.Prefix("https://sso.example") + "sub-1", "t1", null);
+        _users.Setup(u => u.GetApiTokensForUser(user.Object)).Returns([oidcToken]);
+        _users.Setup(u => u.InvalidateApiToken(oidcToken)).ThrowsAsync(new InvalidOperationException("boom"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _resolver.UnlinkAsync(5, CancellationToken.None));
+
+        using var db = NewContext();
+        Assert.Single(db.Links);
+    }
+
+    [Fact]
+    public async Task AnAbortedRequestAfterTheUserIsCreated_StillSavesTheLink()
+    {
+        using var cts = new CancellationTokenSource();
+        _users.Setup(u => u.CreateUser(It.IsAny<UserUpdate>())).Returns(() =>
+        {
+            cts.Cancel();
+            return Task.FromResult(User(9, "alice").Object);
+        });
+
+        var user = await _resolver.ResolveAsync(Identity(), new OidcConfiguration { AutoCreateUsers = true }, cts.Token);
+
+        Assert.Equal(9, user.LocalID);
+        using var db = NewContext();
+        Assert.Equal(9, Assert.Single(db.Links).UserID);
+        _users.Verify(u => u.DeleteUser(It.IsAny<IUser>()), Times.Never);
+    }
+
+    private sealed class FailingContext(DbContextOptions<OidcDbContext> options) : OidcDbContext(options)
+    {
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("save failed");
+    }
+
+    [Fact]
+    public async Task AFailedLinkSave_DeletesTheAccountItJustCreated()
+    {
+        var factory = new Mock<IDbContextFactory<OidcDbContext>>();
+        factory.Setup(f => f.CreateDbContextAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new FailingContext(new DbContextOptionsBuilder<OidcDbContext>().UseSqlite(_connection).Options));
+        var resolver = new OidcUserResolver(factory.Object, _users.Object);
+        var created = User(9, "alice").Object;
+        _users.Setup(u => u.CreateUser(It.IsAny<UserUpdate>())).ReturnsAsync(created);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveAsync(Identity(), new OidcConfiguration { AutoCreateUsers = true }, CancellationToken.None));
+
+        _users.Verify(u => u.DeleteUser(created), Times.Once);
+    }
 }
